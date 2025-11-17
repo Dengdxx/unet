@@ -313,16 +313,19 @@ def main() -> None:
             f"Train Dice {train_dice:.4f} | Val Dice {val_dice:.4f} | LR {current_lr:.6f} | Time {epoch_time:.2f}s"
         )
 
-        checkpoint_path = output_dir / f"epoch_{epoch:03d}.ckpt"
-        save_checkpoint(model, optimizer, scheduler, scaler, history, epoch, checkpoint_path)
-
-        # 保存最佳模型并记录最佳epoch
+        # 保存最佳模型
         if val_loss < best_val:
             best_val = val_loss
             history["best_epoch"] = epoch
             history["best_val_loss"] = best_val
-            shutil.copy2(checkpoint_path, best_path)
+            save_checkpoint(model, optimizer, scheduler, scaler, history, epoch, best_path)
             print(f"  → 最佳模型已更新 (Epoch {epoch}, Val Loss: {best_val:.4f})")
+        
+        # 只在最后一个epoch保存
+        if epoch == args.epochs:
+            last_checkpoint = output_dir / "last.ckpt"
+            save_checkpoint(model, optimizer, scheduler, scaler, history, epoch, last_checkpoint)
+            print(f"  → 最后epoch模型已保存")
 
     # 加载最佳模型进行测试集评估
     print(f"\n{'='*60}")

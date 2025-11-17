@@ -12,7 +12,7 @@ unet/                          # 项目根目录
 ├── model/                     # 模型权重 (只读*)
 │   └── <dataset>_<timestamp>/
 │       ├── best.ckpt          # 最佳模型权重
-│       ├── epoch_*.ckpt       # 各轮次检查点
+│       ├── last.ckpt          # 最后epoch权重
 │       ├── history.json       # 详细训练历史(Loss/Dice/LR/Time...)
 │       └── figures/
 │           └── training_history.png  # 6合1训练曲线
