@@ -1,3 +1,9 @@
+"""细胞分割数据集模块
+
+本模块定义了用于加载和处理细胞分割数据集的类和函数。
+支持 Cell Tracking Challenge 格式的数据，提供数据加载、预处理和增强功能。
+"""
+
 from __future__ import annotations
 
 import random
@@ -15,7 +21,14 @@ import torchvision.transforms.functional as TF
 
 @dataclass(frozen=True)
 class CellSample:
-    """Metadata for a single frame-mask pair."""
+    """单个样本的元数据。
+
+    Attributes:
+        image_path (Path): 图像文件的路径。
+        mask_path (Path): 掩码文件的路径。
+        sequence (str): 序列编号（例如 "01"）。
+        frame_id (str): 帧编号。
+    """
 
     image_path: Path
     mask_path: Path
@@ -24,7 +37,20 @@ class CellSample:
 
 
 class CellSegDataset(Dataset):
-    """Dataset wrapper for Cell Tracking Challenge segmentation pairs."""
+    """Cell Tracking Challenge 分割任务的数据集封装。
+
+    负责加载图像和掩码，并进行统一的预处理和可选的数据增强。
+
+    Attributes:
+        root (Path): 数据集根目录。
+        mask_source (str): 掩码来源类型 ("ST" 或 "GT")。
+        resize_to (Tuple[int, int]): 图像调整的目标尺寸 (height, width)。
+        augment (bool): 是否启用数据增强。
+        mean (torch.Tensor): 归一化均值。
+        std (torch.Tensor): 归一化标准差。
+        threshold (int): 掩码二值化阈值。
+        samples (List[CellSample]): 样本列表。
+    """
 
     def __init__(
         self,
@@ -39,6 +65,22 @@ class CellSegDataset(Dataset):
         std: Sequence[float] = (0.5,),
         threshold: int = 0,
     ) -> None:
+        """初始化 CellSegDataset。
+
+        Args:
+            root (Path | str): 数据集根目录路径。
+            samples (Optional[Sequence[CellSample]]): 预先扫描的样本列表。如果为 None，则自动扫描。
+            sequences (Sequence[str]): 要包含的序列编号列表，默认为 ("01", "02")。
+            mask_source (str): 优先使用的掩码来源，"ST" (Silver Truth) 或 "GT" (Ground Truth)。
+            resize_to (Tuple[int, int]): 调整后的大小，默认为 (512, 512)。
+            augment (bool): 是否启用训练时的数据增强，默认为 False。
+            mean (Sequence[float]): 图像归一化的均值，默认为 (0.5,)。
+            std (Sequence[float]): 图像归一化的标准差，默认为 (0.5,)。
+            threshold (int): 读取掩码时的阈值，默认为 0。
+
+        Raises:
+            RuntimeError: 如果未找到任何有效样本。
+        """
         self.root = Path(root)
         self.mask_source = mask_source
         self.resize_to = resize_to
@@ -59,6 +101,19 @@ class CellSegDataset(Dataset):
 
     @staticmethod
     def _scan_samples(root: Path, sequences: Sequence[str], mask_source: str) -> List[CellSample]:
+        """扫描目录以发现有效的数据样本。
+
+        Args:
+            root (Path): 数据集根目录。
+            sequences (Sequence[str]): 要扫描的序列。
+            mask_source (str): 掩码来源 ("ST" 或 "GT")。
+
+        Returns:
+            List[CellSample]: 发现的样本列表。
+
+        Raises:
+            FileNotFoundError: 如果指定的掩码目录不存在且无法回退。
+        """
         samples: List[CellSample] = []
         for seq in sequences:
             image_dir = root / seq
@@ -94,9 +149,27 @@ class CellSegDataset(Dataset):
         return samples
 
     def __len__(self) -> int:
+        """返回数据集大小。
+
+        Returns:
+            int: 样本总数。
+        """
         return len(self.samples)
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor | Dict[str, str]]:
+        """获取指定索引的样本。
+
+        加载图像和掩码，应用调整大小、增强和归一化。
+
+        Args:
+            index (int): 样本索引。
+
+        Returns:
+            Dict[str, Any]: 包含处理后数据的字典。
+                - 'image': (C, H, W) 图像张量。
+                - 'mask': (1, H, W) 掩码张量。
+                - 'meta': 元数据字典（序列、帧ID、路径）。
+        """
         sample = self.samples[index]
         image = Image.open(sample.image_path).convert("L")
         mask = Image.open(sample.mask_path).convert("L")
@@ -123,17 +196,31 @@ class CellSegDataset(Dataset):
         }
 
     def _resize(self, image: Image.Image, mask: Image.Image) -> Tuple[Image.Image, Image.Image]:
+        """调整图像和掩码的大小。
+
+        Args:
+            image (Image.Image): 输入图像。
+            mask (Image.Image): 输入掩码。
+
+        Returns:
+            Tuple[Image.Image, Image.Image]: 调整大小后的图像和掩码。
+        """
         image_resized = TF.resize(image, self.resize_to, interpolation=InterpolationMode.BILINEAR, antialias=True)
         mask_resized = TF.resize(mask, self.resize_to, interpolation=InterpolationMode.NEAREST)
         return image_resized, mask_resized
 
     def _augment(self, image: Image.Image, mask: Image.Image) -> Tuple[Image.Image, Image.Image]:
-        """数据增强 - 几何+光度变换的组合拳
-        
-        关键原则:
-        1. 图像与掩码必须同步变换(几何)
-        2. 掩码用NEAREST插值防止引入中间值
-        3. 光度变换只作用于图像,掩码保持0/1二值
+        """应用数据增强。
+
+        包括几何变换（翻转、旋转、仿射）和光度变换（Gamma、对比度、亮度）。
+        几何变换同步应用于图像和掩码，光度变换仅应用于图像。
+
+        Args:
+            image (Image.Image): 输入图像。
+            mask (Image.Image): 输入掩码。
+
+        Returns:
+            Tuple[Image.Image, Image.Image]: 增强后的图像和掩码。
         """
         
         # 几何变换: 翻转
@@ -199,6 +286,21 @@ def _split_samples(
     test_ratio: float,
     seed: int,
 ) -> Tuple[List[CellSample], List[CellSample], List[CellSample]]:
+    """将样本划分为训练集、验证集和测试集。
+
+    Args:
+        samples (Sequence[CellSample]): 所有样本列表。
+        val_ratio (float): 验证集比例。
+        test_ratio (float): 测试集比例。
+        seed (int): 随机种子，保证划分的可复现性。
+
+    Returns:
+        Tuple[List[CellSample], List[CellSample], List[CellSample]]:
+            (训练集列表, 验证集列表, 测试集列表)。
+
+    Raises:
+        ValueError: 如果比例之和 >= 1.0 或训练集为空。
+    """
     if val_ratio + test_ratio >= 1.0:
         raise ValueError("val_ratio + test_ratio 必须小于1。")
 
@@ -246,6 +348,29 @@ def build_cell_dataloaders(
     pin_memory: bool = True,
     train_augment: bool = True,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """构建训练、验证和测试的数据加载器。
+
+    这是使用此模块的主要入口函数。它处理样本发现、划分和加载器创建。
+
+    Args:
+        data_root (str | Path): 数据集根目录。
+        dataset_name (str): 数据集名称（子目录名）。
+        sequences (Sequence[str]): 使用的序列列表。
+        mask_source (str): 掩码来源 ("ST" 或 "GT")。
+        resize_to (Tuple[int, int]): 图像调整尺寸。
+        batch_size (int): 批大小。
+        num_workers (int): DataLoader 的工作进程数。
+        val_ratio (float): 验证集比例。
+        test_ratio (float): 测试集比例。
+        seed (int): 随机种子。
+        mean (Sequence[float]): 归一化均值。
+        std (Sequence[float]): 归一化标准差。
+        pin_memory (bool): 是否使用 pinned memory（加速 CPU 到 GPU 传输）。
+        train_augment (bool): 是否在训练集启用数据增强。
+
+    Returns:
+        Tuple[DataLoader, DataLoader, DataLoader]: (训练加载器, 验证加载器, 测试加载器)。
+    """
     base_path = Path(data_root) / dataset_name
     samples = CellSegDataset._scan_samples(base_path, sequences, mask_source)
     train_samples, val_samples, test_samples = _split_samples(

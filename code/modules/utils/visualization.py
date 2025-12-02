@@ -1,4 +1,8 @@
-"""可视化工具集"""
+"""可视化工具集
+
+本模块提供了一系列用于可视化训练过程和模型预测结果的工具函数。
+包括配置中文字体、绘制训练历史曲线以及批量可视化预测结果。
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,14 @@ from matplotlib import font_manager, rcParams
 
 
 def setup_cn_font() -> None:
-    """配置matplotlib中文字体 - 优先使用Noto Sans CJK"""
+    """配置 matplotlib 中文字体。
+
+    尝试查找并设置支持中文的字体（优先 'Noto Sans CJK'，其次 'SimHei'）。
+    同时设置负号显示问题。
+
+    Returns:
+        None
+    """
     font_name = next(
         (f.name for f in font_manager.fontManager.ttflist if 'noto sans cjk' in f.name.lower()),
         'SimHei',
@@ -25,12 +36,18 @@ def setup_cn_font() -> None:
 
 
 def plot_training_history(history: Dict[str, List[float]], save_dir: Path) -> None:
-    """
-    绘制训练历史曲线 - 参考U-Net论文的可视化标准
-    
+    """绘制并保存训练历史曲线。
+
+    生成包含损失曲线、Dice 系数曲线、过拟合监控、学习率变化和训练耗时的综合图表。
+
     Args:
-        history: 包含train_loss, val_loss, train_dice, val_dice等的字典
-        save_dir: 保存目录
+        history (Dict[str, List[float]]): 包含训练指标历史数据的字典。
+            预期键包括 'train_loss', 'val_loss', 'train_dice', 'val_dice',
+            'learning_rates', 'epoch_times' 等。
+        save_dir (Path): 图片保存的目录路径。
+
+    Returns:
+        None: 结果将保存为 'training_history.png' 到指定目录。
     """
     setup_cn_font()
     epochs = range(1, len(history['train_loss']) + 1)
@@ -138,16 +155,20 @@ def visualize_predictions(
     threshold: float = 0.5,
     num_samples: int = 4,
 ) -> None:
-    """
-    批量可视化推理结果
-    
+    """批量可视化推理结果。
+
+    从数据集中采样并生成包含输入图像、真实标签、预测概率和叠加结果的对比图。
+
     Args:
-        model: 训练好的模型
-        dataset: 数据集
-        device: 设备
-        save_dir: 保存目录
-        threshold: 二值化阈值
-        num_samples: 可视化样本数
+        model (nn.Module): 训练好的 PyTorch 模型。
+        dataset: 包含数据样本的数据集对象。
+        device (torch.device): 运行推理的设备（CPU 或 CUDA）。
+        save_dir (Path): 图片保存的目录路径。
+        threshold (float): 将预测概率转换为二值掩码的阈值，默认为 0.5。
+        num_samples (int): 要可视化的样本数量，默认为 4。
+
+    Returns:
+        None: 结果将保存为 'inference_samples.png' 到指定目录。
     """
     setup_cn_font()
     model.eval()
