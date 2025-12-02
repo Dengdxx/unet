@@ -1,4 +1,8 @@
-"""独立推理脚本 - 加载训练好的模型进行批量预测"""
+"""独立推理脚本 - 加载训练好的模型进行批量预测
+
+本脚本用于加载保存的 U-Net 模型权重，对指定数据集进行推理。
+支持批量处理、指标计算（Dice 系数）以及结果可视化。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,13 @@ from modules.utils import visualize_predictions, dice_coefficient
 
 
 def parse_args() -> argparse.Namespace:
+    """解析推理脚本的命令行参数。
+
+    包括模型权重路径、数据设置、推理参数等。
+
+    Returns:
+        argparse.Namespace: 包含解析后参数的对象。
+    """
     parser = argparse.ArgumentParser(description='U-Net推理脚本')
     parser.add_argument('--checkpoint', type=str, required=True, help='模型权重路径(.ckpt)')
     parser.add_argument('--data-root', type=str, default='../dataset')
@@ -32,6 +43,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """主推理流程。
+
+    1. 解析参数。
+    2. 加载数据集和模型。
+    3. 执行批量推理并计算平均 Dice 系数。
+    4. 生成并保存可视化结果。
+
+    Returns:
+        None
+    """
     args = parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     

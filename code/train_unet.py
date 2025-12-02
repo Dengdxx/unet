@@ -1,3 +1,10 @@
+"""U-Net 训练脚本
+
+本脚本负责训练 U-Net 模型进行细胞分割。
+包括参数解析、环境设置、模型初始化、训练循环、验证、测试以及模型保存。
+支持 AMP 混合精度训练和 Tensor Cores 加速。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +30,13 @@ from modules.utils import DiceLoss, dice_coefficient, plot_training_history, vis
 
 
 def parse_args() -> argparse.Namespace:
+    """解析命令行参数。
+
+    定义并解析训练脚本所需的各种参数，包括数据路径、模型超参数、训练配置等。
+
+    Returns:
+        argparse.Namespace: 包含解析后参数的对象。
+    """
     parser = argparse.ArgumentParser(description="细胞分割 U-Net 训练脚本")
     parser.add_argument("--data-root", type=str, default="../dataset", help="数据根目录")
     parser.add_argument(
@@ -67,7 +81,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def set_seed(seed: int = 42) -> None:
-    """设置全局随机种子确保可复现性"""
+    """设置全局随机种子确保可复现性。
+
+    同时设置 Python、NumPy 和 PyTorch 的随机种子。
+
+    Args:
+        seed (int): 随机种子值，默认为 42。
+
+    Returns:
+        None
+    """
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
@@ -76,7 +99,17 @@ def set_seed(seed: int = 42) -> None:
 
 
 def make_amp_context(device: torch.device):
-    """创建AMP上下文 - 混合精度训练可加速2-3倍"""
+    """创建 AMP (Automatic Mixed Precision) 上下文。
+
+    如果设备支持 CUDA，则启用 FP16 混合精度训练，可加速训练并节省显存。
+    否则返回一个空的上下文管理器。
+
+    Args:
+        device (torch.device): 运行设备。
+
+    Returns:
+        Callable: 返回上下文管理器的函数。
+    """
     if device.type == "cuda":
         return lambda: torch_amp.autocast("cuda", dtype=torch.float16)
     return lambda: nullcontext()
@@ -94,12 +127,27 @@ def train_one_epoch(
     threshold: float,
     amp_context,
 ) -> Tuple[float, float]:
-    """单个epoch训练流程
-    
+    """执行单个 Epoch 的训练流程。
+
     关键优化点:
     - non_blocking=True: CPU->GPU异步传输,与计算并行
     - set_to_none=True: 梯度置None比置0更快且省显存
     - AMP自动混合精度: FP16前向+FP32梯度累积
+
+    Args:
+        model (nn.Module): 待训练的模型。
+        loader (DataLoader): 训练数据加载器。
+        optimizer (Optimizer): 优化器。
+        scaler (GradScaler): 混合精度训练的梯度缩放器。
+        criterion (nn.Module): 主损失函数（通常是 BCE）。
+        dice_loss (DiceLoss): Dice 损失函数。
+        device (torch.device): 运行设备。
+        dice_weight (float): Dice 损失的权重。
+        threshold (float): Dice 系数计算的阈值。
+        amp_context (Callable): AMP 上下文管理器工厂函数。
+
+    Returns:
+        Tuple[float, float]: (平均损失, 平均 Dice 系数)。
     """
     model.train()
     epoch_loss = 0.0
@@ -145,6 +193,21 @@ def evaluate(
     threshold: float,
     amp_context,
 ) -> Tuple[float, float]:
+    """在给定数据加载器上评估模型。
+
+    Args:
+        model (nn.Module): 待评估的模型。
+        loader (DataLoader): 验证或测试数据加载器。
+        criterion (nn.Module): 主损失函数。
+        dice_loss (DiceLoss): Dice 损失函数。
+        device (torch.device): 运行设备。
+        dice_weight (float): Dice 损失的权重。
+        threshold (float): Dice 系数计算的阈值。
+        amp_context (Callable): AMP 上下文管理器工厂函数。
+
+    Returns:
+        Tuple[float, float]: (平均损失, 平均 Dice 系数)。
+    """
     model.eval()
     epoch_loss = 0.0
     epoch_dice = 0.0
@@ -181,7 +244,22 @@ def save_checkpoint(
     epoch: int,
     path: Path,
 ) -> None:
-    """保存完整训练状态以支持断点续训"""
+    """保存完整训练状态以支持断点续训。
+
+    保存模型权重、优化器状态、调度器状态、Scaler 状态、训练历史和当前 Epoch。
+
+    Args:
+        model (nn.Module): 模型。
+        optimizer (Optimizer): 优化器。
+        scheduler (_LRScheduler): 学习率调度器。
+        scaler (GradScaler): 梯度缩放器。
+        history (Dict[str, list]): 训练历史记录。
+        epoch (int): 当前 Epoch。
+        path (Path): 保存路径。
+
+    Returns:
+        None
+    """
     state = {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
@@ -194,6 +272,19 @@ def save_checkpoint(
 
 
 def main() -> None:
+    """主函数。
+
+    组织整个训练流程：
+    1. 解析参数和设置环境。
+    2. 准备数据加载器。
+    3. 初始化模型、损失函数、优化器。
+    4. 执行训练循环。
+    5. 保存模型和日志。
+    6. 执行测试和可视化。
+
+    Returns:
+        None
+    """
     args = parse_args()
     set_seed(args.seed)
 
