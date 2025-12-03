@@ -199,7 +199,8 @@ class UNet(nn.Module):
         self.bottleneck = ConvBlock(channels[-1], channels[-1] * 2, dropout=dropout)
 
         self.up_blocks = nn.ModuleList()
-        reversed_channels = list(reversed(channels))
+        # 跳过最后一层channel，因为它是bottleneck的输入，不作为上采样的skip connection
+        reversed_channels = list(reversed(channels[:-1]))
         in_ch = channels[-1] * 2
         for skip_ch in reversed_channels:
             self.up_blocks.append(
@@ -252,7 +253,8 @@ class UNet(nn.Module):
 
         x = self.bottleneck(x)
 
-        for skip, up in zip(reversed(shortcuts), self.up_blocks):
+        # 同样跳过最后一个shortcut (bottleneck的输入)
+        for skip, up in zip(reversed(shortcuts[:-1]), self.up_blocks):
             x = up(x, skip)
 
         return self.out_conv(x)
